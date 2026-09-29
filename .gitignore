@@ -1,0 +1,29 @@
+# BlackBerry JDE / RAPC generated build outputs
+*.class
+*.cod
+*.jar
+*.jad
+*.debug
+*.cso
+*.rapc
+*.csl
+*.sig
+*.log
+bin/
+build/
+dist/
+
+# Local editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# Local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key

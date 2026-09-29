@@ -1,0 +1,18 @@
+[
+  {
+    "Hash": "DB363CF9A9EA6F94E29BF98340D24EA9619452601D3132B56CA910F13958C345",
+    "Path": "C:\\BlackBerryDev\\Workspace\\Cave\\res\\warrior.png"
+  },
+  {
+    "Hash": "B2029E974A3420B9292C6694E4DC49E0D4805290682E227F61C346087A24E190",
+    "Path": "C:\\BlackBerryDev\\Workspace\\Cave\\res\\thief_walk_trial.png"
+  },
+  {
+    "Hash": "CF6DA12C3308FC3617AC4224987F11A256AEAD513EB0DD6C62372DDDC684268B",
+    "Path": "C:\\BlackBerryDev\\Workspace\\Cave\\res\\mage_walk_trial.png"
+  },
+  {
+    "Hash": "8D2AE78D03566BFA247F0DBA20C89C594E5EA876BB51FC608C3101F73047510E",
+    "Path": "C:\\BlackBerryDev\\Workspace\\Cave\\res\\nun_walk_trial.png"
+  }
+]
