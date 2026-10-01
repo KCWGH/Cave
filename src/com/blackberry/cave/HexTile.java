@@ -5,6 +5,8 @@ public class HexTile {
     public int r;
     public int type;
     public boolean revealed = false;
+    public boolean port = false;
+    int portDirection;
 
     public static final int TYPE_GRASS = 0;
     public static final int TYPE_FOREST = 1;

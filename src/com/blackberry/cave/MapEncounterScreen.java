@@ -10,6 +10,8 @@ import net.rim.device.api.ui.UiApplication;
 import net.rim.device.api.ui.container.MainScreen;
 
 public final class MapEncounterScreen extends MainScreen {
+    private static final Font TITLE_FONT = Font.getDefault().derive(Font.BOLD, 22);
+    private static final Font BODY_FONT = Font.getDefault().derive(Font.PLAIN, 16);
     public static final int ATTACK = 0;
     public static final int AMBUSH = 1;
     public static final int FLEE = 2;
@@ -37,6 +39,10 @@ public final class MapEncounterScreen extends MainScreen {
     private int rollingIndex = 0;
     private boolean success = false;
     private boolean exposed = false;
+    private boolean navigationPressed;
+    private boolean touchActive;
+    private boolean touchDragged;
+    private int touchStartX, touchStartY;
     private ResultListener listener;
     private Random random;
     private UiTickTimer timer = new UiTickTimer(new Runnable() {
@@ -50,7 +56,7 @@ public final class MapEncounterScreen extends MainScreen {
         super(MainScreen.NO_VERTICAL_SCROLL | MainScreen.NO_HORIZONTAL_SCROLL);
         this.random = random;
         this.hero = hero;
-        enemyName = enemy.name;
+        enemyName = enemy.name + " L" + enemy.getLevel();
         successChance = chance;
         this.requiredSuccesses = requiredSuccesses;
         this.listener = listener;
@@ -63,9 +69,9 @@ public final class MapEncounterScreen extends MainScreen {
         g.setColor(0x111820);
         g.fillRect(0, 0, getWidth(), getHeight());
         g.setColor(Color.WHITE);
-        g.setFont(g.getFont().derive(Font.BOLD, 22));
+        g.setFont(TITLE_FONT);
         g.drawText("ENCOUNTER: " + enemyName, 20, 20);
-        g.setFont(g.getFont().derive(Font.PLAIN, 16));
+        g.setFont(BODY_FONT);
         g.drawText(hero.name + " - choose an action", 20, 55);
         for (int i = 0; i < ACTION_LABELS.length; i++) {
             int y = 100 + i * 42;
@@ -73,7 +79,7 @@ public final class MapEncounterScreen extends MainScreen {
             g.drawText((selectedAction == i ? "> " : "  ") + ACTION_LABELS[i], 30, y);
         }
         g.setColor(Color.WHITE);
-        g.drawText("Roll: " + (state == CHOICE ? Unit.focusedChance(successChance, selectedAction == ATTACK ? 0 : plannedFocus) : rollChance) + "% each, need " + requiredSuccesses
+        g.drawText("Roll: " + (state == CHOICE ? Unit.focusedChance(selectedChance(), selectedAction == ATTACK ? 0 : plannedFocus) : rollChance) + "% each, need " + requiredSuccesses
                 + "/" + slots.length, 20, 240);
         if (state == ROLLING || state == RESULT) {
             for (int i = 0; i < slots.length; i++) {
@@ -94,6 +100,10 @@ public final class MapEncounterScreen extends MainScreen {
             g.drawText("[W/S] select  [ENTER] confirm", 20, 330);
     }
 
+    private int selectedChance() {
+        return selectedAction == FLEE ? hero.escapeChance(successChance) : successChance;
+    }
+
     private void confirm() {
         if (!exposed || UiApplication.getUiApplication().getActiveScreen() != this)
             return;
@@ -104,7 +114,7 @@ public final class MapEncounterScreen extends MainScreen {
                 finish(true);
             } else {
                 spentFocus = Math.min(plannedFocus, Math.min(hero.curFocus, slots.length));
-                rollChance = Unit.focusedChance(successChance, spentFocus);
+                rollChance = Unit.focusedChance(selectedChance(), spentFocus);
                 hero.curFocus -= spentFocus;
                 plannedFocus = 0;
                 state = ROLLING;
@@ -170,21 +180,49 @@ public final class MapEncounterScreen extends MainScreen {
     }
 
     protected boolean navigationMovement(int dx, int dy, int status, int time) {
+        if (!exposed || UiApplication.getUiApplication().getActiveScreen() != this) return true;
         if (dy != 0)
             select(dy > 0 ? 1 : -1);
+        if (dx != 0 && state == CHOICE && selectedAction != ATTACK) {
+            plannedFocus = Math.max(0, Math.min(plannedFocus + (dx > 0 ? 1 : -1),
+                    Math.min(hero.curFocus, slots.length)));
+            invalidate();
+        }
         return true;
     }
 
     protected boolean navigationClick(int status, int time) {
-        confirm();
+        if (!navigationPressed) {
+            navigationPressed = true;
+            confirm();
+        }
+        return true;
+    }
+
+    protected boolean navigationUnclick(int status, int time) {
+        navigationPressed = false;
         return true;
     }
 
     protected boolean touchEvent(TouchEvent event) {
-        if (event.getEvent() == TouchEvent.UP) {
+        int x = event.getX(1), y = event.getY(1);
+        if (event.getEvent() == TouchEvent.CANCEL || event.getX(2) >= 0) {
+            touchActive = false;
+            return true;
+        }
+        if (event.getEvent() == TouchEvent.DOWN) {
+            touchActive = exposed && x >= 0 && y >= 0;
+            touchDragged = false;
+            touchStartX = x;
+            touchStartY = y;
+        } else if (touchActive && (event.getEvent() == TouchEvent.MOVE || event.getEvent() == TouchEvent.UP)) {
+            if (x < 0 || y < 0 || Math.abs(x - touchStartX) > 8 || Math.abs(y - touchStartY) > 8)
+                touchDragged = true;
+            if (event.getEvent() != TouchEvent.UP) return true;
+            touchActive = false;
+            if (touchDragged || !exposed) return true;
             if (state == CHOICE) {
-                int y = event.getY(1);
-                if (y >= 100 && y < 226) {
+                if (x >= 20 && x < getWidth() - 20 && y >= 100 && y < 226) {
                     int tappedAction = (y - 100) / 42;
                     if (tappedAction != selectedAction) plannedFocus = 0;
                     selectedAction = tappedAction;
@@ -207,8 +245,20 @@ public final class MapEncounterScreen extends MainScreen {
         else
             pauseUpdates();
     }
-    protected void onExposed() { super.onExposed(); exposed = true; resumeUpdates(); }
-    protected void onObscured() { exposed = false; pauseUpdates(); super.onObscured(); }
+    protected void onExposed() {
+        super.onExposed();
+        navigationPressed = false;
+        touchActive = false;
+        exposed = true;
+        resumeUpdates();
+    }
+    protected void onObscured() {
+        exposed = false;
+        touchActive = false;
+        navigationPressed = false;
+        pauseUpdates();
+        super.onObscured();
+    }
     void pauseUpdates() { timer.stop(); }
     void resumeUpdates() {
         if (exposed && state == ROLLING)

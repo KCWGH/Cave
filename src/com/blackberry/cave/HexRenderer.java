@@ -6,13 +6,14 @@ import net.rim.device.api.system.Bitmap;
 import java.util.Vector;
 
 public class HexRenderer {
+    private static final boolean FOREST_OVERHANG_TRIAL = true;
+    private static final boolean MOUNTAIN_OVERHANG_TRIAL = true;
     private int hexRadius = 70;
     private int originX = 320;
     private int originY = 240;
 
     private double sqrt3 = 1.73205081;
     private int r;
-    private int width, height;
 
     private int[] hexXOffsets = new int[6];
     private int[] hexYOffsets = new int[6];
@@ -25,25 +26,42 @@ public class HexRenderer {
 
     // Scratch arrays to avoid allocation
     private int[] scratchPoint = new int[2];
+    private HexMap minimapBoundsMap;
+    private int minimapMinX, minimapMinY, minimapMaxX, minimapMaxY;
 
     private Bitmap imgGrass;
     private Bitmap imgForest;
+    private Bitmap imgForestTrees;
+    private Bitmap imgForestClearing;
+    private int[] forestAlpha;
+    private int[] forestTarget;
+    private boolean forestInitialized;
+    private Vector forestDecorations = new Vector();
+    private Vector terrainDecorations = new Vector();
     private Bitmap imgWater;
     private Bitmap imgMountain;
+    private Bitmap imgMountainPeaks;
     private Bitmap imgTown;
+    private Bitmap[] imgPorts = new Bitmap[6];
     private Bitmap imgCloud;
 
     public HexRenderer() {
         imgGrass = Bitmap.getBitmapResource("tile_grass.png");
-        imgForest = Bitmap.getBitmapResource("tile_forest.png");
+        imgForest = Bitmap.getBitmapResource(FOREST_OVERHANG_TRIAL ? "tile_forest_floor.png" : "tile_forest.png");
+        if (FOREST_OVERHANG_TRIAL) {
+            imgForestTrees = Bitmap.getBitmapResource("forest_dense.png");
+            imgForestClearing = Bitmap.getBitmapResource("forest_clearing.png");
+        }
         imgWater = Bitmap.getBitmapResource("tile_water.png");
-        imgMountain = Bitmap.getBitmapResource("tile_mountain.png");
+        imgMountain = Bitmap.getBitmapResource(MOUNTAIN_OVERHANG_TRIAL ? "tile_mountain_floor.png" : "tile_mountain.png");
+        if (MOUNTAIN_OVERHANG_TRIAL) imgMountainPeaks = Bitmap.getBitmapResource("mountain_peaks.png");
         imgTown = Bitmap.getBitmapResource("tile_town.png");
+        String[] directions = { "e", "ne", "nw", "w", "sw", "se" };
+        for (int i = 0; i < directions.length; i++)
+            imgPorts[i] = Bitmap.getBitmapResource("tile_port_" + directions[i] + ".png");
         imgCloud = Bitmap.getBitmapResource("tile_cloud.png");
 
         r = hexRadius;
-        width = (int) (r * sqrt3);
-        height = 2 * r;
 
         // Pre-calculate hex offsets
         for (int i = 0; i < 6; i++) {
@@ -58,6 +76,94 @@ public class HexRenderer {
     public void setOrigin(int x, int y) {
         this.originX = x;
         this.originY = y;
+    }
+
+    public void prepareTerrain(HexMap map) {
+        forestDecorations.removeAllElements();
+        terrainDecorations.removeAllElements();
+        Vector tiles = map.getTiles();
+        for (int i = 0; i < tiles.size(); i++) {
+            HexTile tile = (HexTile) tiles.elementAt(i);
+            if (!(FOREST_OVERHANG_TRIAL && tile.type == HexTile.TYPE_FOREST)
+                    && !(MOUNTAIN_OVERHANG_TRIAL && tile.type == HexTile.TYPE_MOUNTAIN)) continue;
+            int index = terrainDecorations.size();
+            while (index > 0) {
+                HexTile previous = (HexTile) terrainDecorations.elementAt(index - 1);
+                // World Y depends only on axial r; q breaks ties left to right.
+                if (previous.r < tile.r || (previous.r == tile.r && previous.q <= tile.q)) break;
+                index--;
+            }
+            terrainDecorations.insertElementAt(tile, index);
+        }
+        for (int i = 0; i < terrainDecorations.size(); i++) {
+            HexTile tile = (HexTile) terrainDecorations.elementAt(i);
+            if (tile.type == HexTile.TYPE_FOREST) forestDecorations.addElement(tile);
+        }
+        forestAlpha = new int[forestDecorations.size()];
+        forestTarget = new int[forestDecorations.size()];
+        forestInitialized = false;
+    }
+
+    boolean syncForestOccupancy(Party party) {
+        if (!FOREST_OVERHANG_TRIAL) return false;
+        boolean pending = false;
+        for (int i = 0; i < forestDecorations.size(); i++) {
+            HexTile tile = (HexTile) forestDecorations.elementAt(i);
+            int target = 0;
+            for (int j = 0; j < party.members.size(); j++) {
+                Unit unit = (Unit) party.members.elementAt(j);
+                if (unit.q == tile.q && unit.r == tile.r) { target = 255; break; }
+            }
+            forestTarget[i] = target;
+            if (!forestInitialized) forestAlpha[i] = target;
+            if (forestAlpha[i] != target) pending = true;
+        }
+        forestInitialized = true;
+        return pending;
+    }
+
+    boolean animateForest() {
+        boolean changed = false;
+        if (!FOREST_OVERHANG_TRIAL) return false;
+        for (int i = 0; i < forestAlpha.length; i++) {
+            int value = forestAlpha[i], target = forestTarget[i];
+            if (value == target) continue;
+            forestAlpha[i] = value < target ? Math.min(target, value + 26) : Math.max(target, value - 26);
+            changed = true;
+        }
+        return changed;
+    }
+
+    public void drawTerrainDecorations(Graphics g, int screenW, int screenH) {
+        int forestIndex = -1;
+        for (int i = 0; i < terrainDecorations.size(); i++) {
+            HexTile tile = (HexTile) terrainDecorations.elementAt(i);
+            boolean mountain = tile.type == HexTile.TYPE_MOUNTAIN;
+            if (!mountain) forestIndex++;
+            if (!tile.revealed) continue;
+            Bitmap decoration = mountain ? imgMountainPeaks : imgForestTrees;
+            int width = decoration.getWidth(), height = decoration.getHeight();
+            getHexScreenPoint(tile.q, tile.r, scratchPoint);
+            int x = scratchPoint[0] - width / 2, y = scratchPoint[1] - (mountain ? 140 : 115);
+            // Cull by the decoration bounds, including crowns above the base hex.
+            if (x + width <= 0 || x >= screenW || y + height <= 0 || y >= screenH) continue;
+            if (mountain) {
+                g.drawBitmap(x, y, width, height, decoration, 0, 0);
+                continue;
+            }
+            int alpha = forestAlpha[forestIndex];
+            int previousAlpha = g.getGlobalAlpha();
+            try {
+                if (alpha < 255) {
+                    g.setGlobalAlpha(previousAlpha * (255 - alpha) / 255);
+                    g.drawBitmap(x, y, width, height, imgForestTrees, 0, 0);
+                }
+                if (alpha > 0) {
+                    g.setGlobalAlpha(previousAlpha * alpha / 255);
+                    g.drawBitmap(x, y, width, height, imgForestClearing, 0, 0);
+                }
+            } finally { g.setGlobalAlpha(previousAlpha); }
+        }
     }
 
     public int getHexHalfWidth() {
@@ -76,20 +182,19 @@ public class HexRenderer {
         return originY;
     }
 
-    public void drawMap(Graphics g, HexMap map) {
+    public void drawMap(Graphics g, HexMap map, int screenW, int screenH) {
         boolean antialias = g.isDrawingStyleSet(Graphics.DRAWSTYLE_ANTIALIASED);
         g.setDrawingStyle(Graphics.DRAWSTYLE_ANTIALIASED, true);
         try {
-            int screenW = 640;
-            int screenH = 480;
             Vector tiles = map.getTiles();
             int size = tiles.size();
+            int halfWidth = getHexHalfWidth();
             for (int i = 0; i < size; i++) {
                 HexTile t = (HexTile) tiles.elementAt(i);
                 getHexScreenPoint(t.q, t.r, scratchPoint);
                 int cx = scratchPoint[0];
                 int cy = scratchPoint[1];
-                if (cx + width < 0 || cx - width > screenW || cy + height < 0 || cy - height > screenH)
+                if (cx + halfWidth < 0 || cx - halfWidth > screenW || cy + r < 0 || cy - r > screenH)
                     continue;
                 drawHex(g, t, cx, cy);
             }
@@ -117,7 +222,7 @@ public class HexRenderer {
                     sprite = imgMountain;
                     break;
                 case HexTile.TYPE_TOWN:
-                    sprite = imgTown;
+                    sprite = t.port ? imgPorts[t.portDirection] : imgTown;
                     break;
             }
         }
@@ -181,6 +286,29 @@ public class HexRenderer {
         out[1] += originY;
     }
 
+    public HexTile getTileAtScreenPoint(HexMap map, int x, int y) {
+        Vector tiles = map.getTiles();
+        int halfWidth = getHexHalfWidth();
+        HexTile nearest = null;
+        long bestDistance = Long.MAX_VALUE;
+        for (int i = 0; i < tiles.size(); i++) {
+            HexTile tile = (HexTile) tiles.elementAt(i);
+            getHexScreenPoint(tile.q, tile.r, scratchPoint);
+            int dx = Math.abs(x - scratchPoint[0]);
+            int dy = Math.abs(y - scratchPoint[1]);
+            if (dx > halfWidth || dy > hexRadius
+                    || (dy > hexRadius / 2
+                    && (long) dx * hexRadius > 2L * halfWidth * (hexRadius - dy)))
+                continue;
+            long distance = (long) dx * dx + (long) dy * dy;
+            if (distance < bestDistance) {
+                nearest = tile;
+                bestDistance = distance;
+            }
+        }
+        return nearest;
+    }
+
     public void drawSelector(Graphics g, int q, int r) {
         getHexScreenPoint(q, r, scratchPoint);
         setHexPoints(scratchPoint[0], scratchPoint[1], hexXOffsets, hexYOffsets);
@@ -194,70 +322,77 @@ public class HexRenderer {
         }
     }
 
-    public void drawMinimap(Graphics g, HexMap map, Party party, int x, int y, int alpha) {
-        if (alpha <= 0)
-            return;
+    public void drawQuestMarker(Graphics g, int q, int r) {
+        getHexScreenPoint(q, r, scratchPoint);
+        int x = scratchPoint[0], y = scratchPoint[1] - 28;
+        g.setColor(0xFF00FF);
+        g.drawRect(x - 8, y - 8, 16, 16);
+        g.drawLine(x - 10, y, x + 10, y);
+        g.drawLine(x, y - 10, x, y + 10);
+    }
 
-        int mw = 100;
-        int mh = 100;
-
-        g.setGlobalAlpha(alpha / 2);
-        g.setColor(Color.BLACK);
-        g.fillRect(x, y, mw, mh);
-
-        g.setGlobalAlpha(alpha);
-        g.setColor(0x444444);
-        g.drawRect(x, y, mw, mh);
-
-        Vector tiles = map.getTiles();
-        int size = tiles.size();
-        int centerX = x + mw / 2;
-        int centerY = y + mh / 2;
-        int scale = 4;
-
-        for (int i = 0; i < size; i++) {
-            HexTile t = (HexTile) tiles.elementAt(i);
-            if (!t.revealed)
-                continue;
-
-            int tx = centerX + (int) (scale * (1.732 * t.q + 1.732 / 2.0 * t.r) / 10.0);
-            int ty = centerY + (int) (scale * (1.5 * t.r) / 10.0);
-
-            if (tx < x || tx >= x + mw || ty < y || ty >= y + mh)
-                continue;
-
-            int color = 0x222222;
-            switch (t.type) {
-                case HexTile.TYPE_GRASS:
-                    color = 0x228B22;
-                    break;
-                case HexTile.TYPE_FOREST:
-                    color = 0x006400;
-                    break;
-                case HexTile.TYPE_WATER:
-                    color = 0x0000CD;
-                    break;
-                case HexTile.TYPE_MOUNTAIN:
-                    color = 0x808080;
-                    break;
-                case HexTile.TYPE_TOWN:
-                    color = 0xFFFF00;
-                    break;
+    public void drawMinimap(Graphics g, HexMap map, Party party, Vector enemies,
+            QuestCampaign quest, int cursorQ, int cursorR, int x, int y, int side, int alpha) {
+        if (alpha <= 0 || side < 16) return;
+        int oldAlpha = g.getGlobalAlpha();
+        try {
+            g.setGlobalAlpha(alpha / 2); g.setColor(Color.BLACK); g.fillRect(x,y,side,side);
+            g.setGlobalAlpha(alpha); g.setColor(0x777777); g.drawRect(x,y,side,side);
+            Vector tiles = map.getTiles();
+            if (tiles.isEmpty()) return;
+            if (minimapBoundsMap != map) {
+                minimapMinX = Integer.MAX_VALUE; minimapMinY = Integer.MAX_VALUE;
+                minimapMaxX = Integer.MIN_VALUE; minimapMaxY = Integer.MIN_VALUE;
+                for (int i = 0; i < tiles.size(); i++) {
+                    HexTile t = (HexTile) tiles.elementAt(i);
+                    getHexWorldPoint(t.q, t.r, scratchPoint);
+                    minimapMinX = Math.min(minimapMinX, scratchPoint[0]);
+                    minimapMaxX = Math.max(minimapMaxX, scratchPoint[0]);
+                    minimapMinY = Math.min(minimapMinY, scratchPoint[1]);
+                    minimapMaxY = Math.max(minimapMaxY, scratchPoint[1]);
+                }
+                minimapBoundsMap = map;
             }
-            g.setColor(color);
-            g.fillRect(tx, ty, 2, 2);
-        }
-
-        Unit active = party.getActiveMember();
-        if (active != null) {
-            int px = centerX + (int) (scale * (1.732 * active.q + 1.732 / 2.0 * active.r) / 10.0);
-            int py = centerY + (int) (scale * (1.5 * active.r) / 10.0);
-            if (px >= x && px < x + mw && py >= y && py < y + mh) {
-                g.setColor(Color.WHITE);
-                g.fillRect(px - 1, py - 1, 4, 4);
+            int minX = minimapMinX, minY = minimapMinY;
+            int maxX = minimapMaxX, maxY = minimapMaxY;
+            double scale=Math.min((side-12.0)/Math.max(1,maxX-minX),(side-12.0)/Math.max(1,maxY-minY));
+            int startX=x+(side-roundCoordinate((maxX-minX)*scale))/2;
+            int startY=y+(side-roundCoordinate((maxY-minY)*scale))/2;
+            for(int i=0;i<tiles.size();i++) {
+                HexTile t=(HexTile)tiles.elementAt(i); if(!t.revealed) continue;
+                minimapPoint(t.q,t.r,scale,minX,minY,startX,startY);
+                g.setColor(t.port?0x00FFFF:t.type==HexTile.TYPE_TOWN?0xFFD700:t.type==HexTile.TYPE_WATER?0x3366DD
+                        :t.type==HexTile.TYPE_MOUNTAIN?0x888888:t.type==HexTile.TYPE_FOREST?0x006400:0x228B22);
+                int dot=t.type==HexTile.TYPE_TOWN?3:2;
+                g.fillRect(scratchPoint[0]-1,scratchPoint[1]-1,dot,dot);
             }
-        }
-        g.setGlobalAlpha(255);
+            for(int i=0;i<enemies.size();i++) {
+                Unit u=(Unit)enemies.elementAt(i); HexTile t=map.getTile(u.q,u.r);
+                if(u.curHp<=0 || t==null || !t.revealed) continue;
+                minimapPoint(u.q,u.r,scale,minX,minY,startX,startY);
+                g.setColor(Color.RED); g.fillRect(scratchPoint[0]-1,scratchPoint[1]-1,3,3);
+            }
+            if (quest != null && quest.getState() == QuestCampaign.BOSS_ACTIVE) {
+                minimapPoint(quest.getBossQ(), quest.getBossR(), scale, minX, minY, startX, startY);
+                g.setColor(0xFF00FF);
+                g.fillRect(scratchPoint[0]-2, scratchPoint[1]-2, 5, 5);
+            }
+            Unit active=party.getActiveMember();
+            for(int pass=0;pass<2;pass++) for(int i=0;i<party.members.size();i++) {
+                Unit u=(Unit)party.members.elementAt(i); if((u==active)!=(pass==1)) continue;
+                minimapPoint(u.q,u.r,scale,minX,minY,startX,startY);
+                g.setColor(u.curHp<=0?0x888888:u==active?Color.WHITE:Color.CYAN);
+                g.fillRect(scratchPoint[0]-1,scratchPoint[1]-1,3,3);
+            }
+            minimapPoint(cursorQ,cursorR,scale,minX,minY,startX,startY);
+            g.setColor(Color.YELLOW); g.drawRect(scratchPoint[0]-2,scratchPoint[1]-2,5,5);
+        } finally { g.setGlobalAlpha(oldAlpha); }
+    }
+
+    private void minimapPoint(int q,int r,double scale,int minX,int minY,int x,int y) {
+        getHexWorldPoint(q,r,scratchPoint);
+        scratchPoint[0]=x+roundCoordinate((scratchPoint[0]-minX)*scale);
+        scratchPoint[1]=y+roundCoordinate((scratchPoint[1]-minY)*scale);
     }
 
     private void drawPolyOutline(Graphics g) {

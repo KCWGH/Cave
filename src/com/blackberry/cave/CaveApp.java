@@ -5,7 +5,7 @@ import net.rim.device.api.ui.UiApplication;
 public class CaveApp extends UiApplication {
     public static void main(String[] args) {
         CaveApp app = new CaveApp();
-        app.pushScreen(new HexGameScreen());
+        app.pushScreen(new TitleScreen());
         app.enterEventDispatcher();
     }
 

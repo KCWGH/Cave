@@ -1,0 +1,11 @@
+{
+  "tool": "built-in image_gen",
+  "prompt": "Create a replacement transparent forest tree overlay for a small hex-map pixel art game. Reference 1 original forest tile is the STYLE AUTHORITY: rich rounded leafy crowns, charming compact clusters, warm brown thin trunks, carefully hand-pixelled highlights. Reference 2 current overlay is ONLY context for what to improve: its trees are too tall, angular and unattractive; do NOT preserve its tall proportions or exposed spidery roots. Reference 3 mountain tile is size context. Produce ONLY three compact beautiful broad rounded leafy trees as one cluster, transparent background, no ground, no hex border, no text. Very short trunks mostly hidden by dense foliage, tiny discreet roots. Front two trees short, rear tree only slightly taller, cohesive lush medium/dark green foliage with soft golden green pixel highlights; no black holes or skeletal branches. Low compact silhouette, approximately square total cluster; width equals height, clear transparent padding. Match the original low resolution RPG pixel art aesthetic, not realistic, not smooth vector. Keep full cluster visible uncropped. These will be exported at 120x120 pixels and sit in a 140px-high tile, so the trees must read much smaller than mountain peaks.",
+  "source": "C:\\Users\\Chanwoo Kim\\.codex\\generated_images\\01a0ebff-cdb5-70a0-aac4-b1e6a272bf86\\exec-dc7a517d-abde-452c-8065-2b6f588d77c7.png",
+  "export": {
+    "width": 120,
+    "height": 120,
+    "anchorX": -60,
+    "anchorY": -115
+  }
+}

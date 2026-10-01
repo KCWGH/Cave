@@ -8,6 +8,7 @@ import net.rim.device.api.ui.UiApplication;
 final class UiTickTimer {
     private final Runnable callback;
     private Timer timer;
+    private Runnable uiTick;
     private int generation = 0;
     private boolean pending = false;
 
@@ -19,33 +20,9 @@ final class UiTickTimer {
         if (timer != null)
             return;
         final int token = ++generation;
-        timer = new Timer();
-        timer.schedule(new TimerTask() {
+        uiTick = new Runnable() {
             public void run() {
-                queueTick(token);
-            }
-        }, period, period);
-    }
-
-    synchronized void stop() {
-        generation++;
-        pending = false;
-        if (timer != null) {
-            timer.cancel();
-            timer = null;
-        }
-    }
-
-    private void queueTick(final int token) {
-        final UiApplication app = UiApplication.getUiApplication();
-        synchronized (this) {
-            if (timer == null || token != generation || pending || !app.isForeground())
-                return;
-            pending = true;
-        }
-        // Do not hold the timer monitor while entering the UI queue or game code.
-        app.invokeLater(new Runnable() {
-            public void run() {
+                final UiApplication app = UiApplication.getUiApplication();
                 synchronized (UiTickTimer.this) {
                     // A stale callback must not clear a newer generation's pending flag.
                     if (timer == null || token != generation)
@@ -62,6 +39,35 @@ final class UiTickTimer {
                     }
                 }
             }
-        });
+        };
+        timer = new Timer();
+        timer.schedule(new TimerTask() {
+            public void run() {
+                queueTick(token);
+            }
+        }, period, period);
+    }
+
+    synchronized void stop() {
+        generation++;
+        pending = false;
+        uiTick = null;
+        if (timer != null) {
+            timer.cancel();
+            timer = null;
+        }
+    }
+
+    private void queueTick(final int token) {
+        final UiApplication app = UiApplication.getUiApplication();
+        final Runnable task;
+        synchronized (this) {
+            if (timer == null || token != generation || pending || !app.isForeground())
+                return;
+            pending = true;
+            task = uiTick;
+        }
+        // Do not hold the timer monitor while entering the UI queue or game code.
+        app.invokeLater(task);
     }
 }

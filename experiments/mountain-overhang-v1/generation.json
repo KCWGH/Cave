@@ -1,0 +1,7 @@
+{
+  "tool": "built-in image_gen",
+  "peaksPrompt": "Pixel art mountain decoration sprite for existing BlackBerry RPG hex map. Reference is strict style/color authority: brown and grey craggy angular mountains with white snow caps, olive green tiny foothill vegetation, painterly hand pixelled shading. Generate an isolated compact cluster of THREE distinct mountain peaks, tallest at back center and two lower front flanks. All peaks fully visible with complete tips. Transparent background, no hex shape, no ground tile, no text, no sky, no rectangular landscape. Wide low foothill base, dramatically pointed snow capped peaks. Sprite will be exported140 pixels wide by190 pixels tall, aligned centerY-125 to protrude55px above a140-high hex. Taller than existing forest canopy but avoid one huge tower. Complete mountains and small foot rocks, no cut edges, generous transparent padding on all sides. Match reference art closely.",
+  "floorPrompt": "Create square seamless ground texture for mountain foothills in same pixel art RPG style as reference. ONLY low rocky mossy terrain, scattered small brown/grey stones, patches olive green short grass and subtle earth. No mountains, peaks, trees, snow, sky, hex border, objects or text. Flat top-down-ish game ground texture filling whole square edge to edge, matches reference bottom foothill colors. Will be140x140 under separately rendered mountain peaks.",
+  "peaksSource": "exec-8c86c4ff-bb1f-4193-b30a-d15d081aead2.png",
+  "floorSource": "exec-7db991fa-08e9-4daa-9a68-38fd30e88279.png"
+}
